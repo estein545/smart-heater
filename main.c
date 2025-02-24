@@ -1,13 +1,20 @@
 #include <inttypes.h>
 #include <hal.h>
 
+// Global variables for capturing IR signal
+#define MAX_EDGES 100
+static volatile uint32_t edges_duration[MAX_EDGES];
+static volatile uint8_t edge_index = 0;
+static volatile uint16_t start_time = 0;
+
+//Pins
+uint16_t ir_receiver = PIN('B', 12);
+uint16_t esp_tx = PIN('A', 10);
+uint16_t esp_rx = PIN('A', 9);
+uint16_t mpu_scl = PIN('B', 6);
+uint16_t mpu_sda = PIN('B', 7);
+
 int main(void) {
-    //set pins
-    uint16_t ir_receiver = PIN('B', 12);
-    uint16_t esp_tx = PIN('A', 10);
-    uint16_t esp_rx = PIN('A', 9);
-    uint16_t mpu_scl = PIN('B', 6);
-    uint16_t mpu_sda = PIN('B', 7);
 
     // enable clocks
     RCC->RCC_APB2ENR |= (3UL << 2); //enable ports A and B clocks
@@ -16,12 +23,13 @@ int main(void) {
     RCC->RCC_APB1ENR |= (1UL << 21); //enable I2C1 clock
     RCC->RCC_APB1ENR |= 1UL; // enable timer clock
 
-    //set I2C Pins to high
+    //set I2C & IR Receiver Pins to high
     GPIO(PINBANK(mpu_scl))->GPIOx_ODR |= BIT(PINNUM(mpu_scl));
     GPIO(PINBANK(mpu_sda))->GPIOx_ODR |= BIT(PINNUM(mpu_sda));
+    GPIO(PINBANK(ir_receiver))->GPIOx_ODR |= BIT(PINNUM(ir_receiver));
 
     // set GPIO Pins to correct modes
-    gpio_set_mode(ir_receiver, GPIO_MODE_INPUT_FLOAT, GPIO_MODE_INPUT);
+    gpio_set_mode(ir_receiver, GPIO_MODE_INPUT_PULL_PUSH, GPIO_MODE_INPUT);
     gpio_set_mode(esp_tx, GPIO_MODE_INPUT_FLOAT, GPIO_MODE_INPUT);
     gpio_set_mode(esp_rx, GPIO_MODE_OUTPUT_AF_PUSH_PULL, GPIO_MODE_OUTPUT_CLOCK_SPEED_50);
     gpio_set_mode(mpu_scl, GPIO_MODE_OUTPUT_AF_OPEN_DRAIN, GPIO_MODE_OUTPUT_CLOCK_SPEED_50);
@@ -38,7 +46,7 @@ int main(void) {
     NVIC->ISER[0] |= (1UL << 40);
     NVIC->ICPR[0] |= (1UL << 40);
 
-    // Configure Timer for 1µs resolution (72MHz / 72 = 1MHz)
+    // Configure Timer
     TIM2->TIM2_PSC = 71;
     TIM2->TIM2_ARR = 0xFFFFFFFF; // Auto-reload to max
     TIM2->TIM2_CR1 |= 1UL; // Start timer
@@ -48,11 +56,26 @@ int main(void) {
 
 //Interrupt Handler for IR Receiver
 void EXTI15_10_IRQHandler(void) {
-    if (EXTI->EXTI_PR & BIT(12)) {
-        EXTI->EXTI_PR |= BIT(12); // Clear the interrupt flag
+
+    if (EXTI->EXTI_PR & BIT(PINNUM(ir_receiver))) {
+        uint16_t end_time = TIM2->TIM2_CNT;
+        EXTI->EXTI_PR |= BIT(PINNUM(ir_receiver));
         
-        // Add your IR receiving logic here
+        //Algorithm for receiving IR Signals:
+        //Every low pulse, set the start time; every high pulse, record the start time
+        //The total pulse time (end - start) is then put into edges_duration where index 0 = the first pulse, index 1 = second, etc...
+        if(GPIO(PINBANK(ir_receiver))->GPIOx_IDR & BIT(PINNUM(ir_receiver))) {
+            start_time = TIM2->TIM2_CNT;
+        } else {
+            edges_duration[edge_index] = end_time - start_time;
+            edge_index++;
+        }
+        
     }
+}
+
+void Default_Handler(void) {
+    while (1);
 }
 
 __attribute__((naked,noreturn)) void _reset(void) {
@@ -69,4 +92,7 @@ extern void _estack(void);
 
 // 16 standard and 91 STM32-specific handlers
 __attribute__((section(".vectors"))) void (*const tab[16 + 91])(void) = {
-    _estack, _reset};
+    _estack, _reset,
+    [2 ... 16 + 90] = Default_Handler,
+    [16 + 40] = EXTI15_10_IRQHandler
+};
