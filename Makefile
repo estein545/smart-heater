@@ -1,7 +1,7 @@
-CFLAGS  ?=  -W -Wall -Wextra -Werror -Wundef -Wshadow -Wdouble-promotion \
+CFLAGS  ?=  -W -Wall -Wextra -Werror -Wno-error=override-init -Wundef -Wshadow -Wdouble-promotion \
             -Wformat-truncation -fno-common -Wconversion \
             -g3 -Os -ffunction-sections -fdata-sections -I. \
-            -mcpu=cortex-m3 -mthumb -MMD -MP $(EXTRA_CFLAGS)
+            -mcpu=cortex-m3 -mthumb -MMD -MP
 LDFLAGS ?= -Tlink.ld -nostartfiles -nostdlib --specs nano.specs -lc -lgcc -Wl,--gc-sections -Wl,-Map=$@.map
 SOURCES = main.c
 

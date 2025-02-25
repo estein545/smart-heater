@@ -20,8 +20,8 @@ enum mode_input {GPIO_MODE_INPUT, GPIO_MODE_OUTPUT_CLOCK_SPEED_10,
 
 static inline void gpio_set_mode(uint16_t pin, uint8_t cnf, uint8_t mode) {
     struct gpio *gpio = GPIO(PINBANK(pin));
-    uint8_t n = PINNUM(pin);
-    uint8_t full_mode = (cnf << 2) | mode;
+    uint8_t n = (uint8_t) PINNUM(pin);
+    uint8_t full_mode = (uint8_t) (cnf << 2) | mode;
     if (n <= 15)
     {
         gpio->GPIOx_CRL &= ~(15U << (n * 4));

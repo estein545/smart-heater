@@ -2,10 +2,9 @@ ENTRY(_reset);
 
 MEMORY {
     FLASH(rx)   : ORIGIN = 0x08000000, LENGTH = 64K
-    SRAM (rwx)   : ORIGIN = 0x20000000, LENGTH = 20K
+    SRAM(rwx)   : ORIGIN = 0x20000000, LENGTH = 20K
 }
-
-_estack     = ORIGIN(SRAM) + LENGTH(SRAM)
+_estack = ORIGIN(SRAM) + LENGTH(SRAM);
 
 SECTIONS {
     .vectors  : { KEEP(*(.isr_vector)) }   > FLASH
@@ -17,7 +16,7 @@ SECTIONS {
         *(.first_data)
         *(.data SORT(.data.*))
         _edata = .;
-    } >SRAM AT > FLASH
+    } > SRAM AT > FLASH
     _sidata = LOADADDR(.data);
 
     .bss    : {
@@ -26,7 +25,6 @@ SECTIONS {
         _ebss = .;
     } > SRAM
 
-    . = ALIGN(8)
+    . = ALIGN(8);
     _end = .;
-
 }

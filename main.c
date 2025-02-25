@@ -5,7 +5,7 @@
 #define MAX_EDGES 100
 static volatile uint32_t edges_duration[MAX_EDGES];
 static volatile uint8_t edge_index = 0;
-static volatile uint16_t start_time = 0;
+static volatile uint32_t start_time = 0;
 
 //Pins
 uint16_t ir_receiver = PIN('B', 12);
@@ -43,8 +43,8 @@ int main(void) {
     EXTI->EXTI_FTSR |= BIT(PINNUM(ir_receiver));
 
     //enable 10-15 interrupts and clear pending interrupts
-    NVIC->ISER[0] |= (1UL << 40);
-    NVIC->ICPR[0] |= (1UL << 40);
+    NVIC->ISER[1] |= (1UL << (40 - 32));
+    NVIC->ICPR[1] |= (1UL << (40 - 32));
 
     // Configure Timer
     TIM2->TIM2_PSC = 71;
@@ -58,7 +58,7 @@ int main(void) {
 void EXTI15_10_IRQHandler(void) {
 
     if (EXTI->EXTI_PR & BIT(PINNUM(ir_receiver))) {
-        uint16_t end_time = TIM2->TIM2_CNT;
+        uint32_t end_time = TIM2->TIM2_CNT;
         EXTI->EXTI_PR |= BIT(PINNUM(ir_receiver));
         
         //Algorithm for receiving IR Signals:
@@ -91,8 +91,8 @@ __attribute__((naked,noreturn)) void _reset(void) {
 extern void _estack(void);
 
 // 16 standard and 91 STM32-specific handlers
-__attribute__((section(".vectors"))) void (*const tab[16 + 91])(void) = {
+__attribute__((section(".vectors"))) void (*const tab[16 + 60])(void) = {
     _estack, _reset,
-    [2 ... 16 + 90] = Default_Handler,
+    [2 ... 16 + 59] = Default_Handler,
     [16 + 40] = EXTI15_10_IRQHandler
 };
