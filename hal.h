@@ -68,3 +68,22 @@ struct tim2 {
 };
 
 #define TIM2 ((struct tim2 *) 0x40000000)
+
+struct rtc {
+    volatile uint32_t RTC_CRH, RTC_CRL, RTC_PRLH, RTC_PRLL, RTC_DIVH,
+    RTC_DIVL, RTC_CNTH, RTC_CNTL, RTC_ALRH, RTC_ALRL;
+};
+
+#define RTC ((struct rtc *) 0x40002800)  // RTC base address (assuming STM32F103)
+
+
+void rtc_init(void) {
+    RCC->RCC_APB1ENR |= (1UL << 27); // Enable RTC clock
+    RCC->RCC_BDCR |= (1UL << 15); // Enable RTC
+    RCC->RCC_BDCR |= (1UL << 8); // Select LSE as RTC clock
+    while (!(RCC->RCC_BDCR & (1UL << 9))); // Wait for LSE ready
+
+    RTC->RTC_CRL |= (1UL << 4); // Enter Configuration Mode
+    RTC->RTC_PRLL = 32767; // Set RTC Prescaler (1Hz = 1 second)
+    RTC->RTC_CRL &= ~(1UL << 4); // Exit Configuration Mode
+}

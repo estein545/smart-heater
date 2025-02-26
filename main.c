@@ -13,6 +13,8 @@ uint16_t esp_tx = PIN('A', 10);
 uint16_t esp_rx = PIN('A', 9);
 uint16_t mpu_scl = PIN('B', 6);
 uint16_t mpu_sda = PIN('B', 7);
+uint16_t ir_led = PIN('B', 13);
+//in the future, esp8266 will be used to communicate with wifi to change the time the on/off function should run
 
 int main(void) {
 
@@ -34,6 +36,7 @@ int main(void) {
     gpio_set_mode(esp_rx, GPIO_MODE_OUTPUT_AF_PUSH_PULL, GPIO_MODE_OUTPUT_CLOCK_SPEED_50);
     gpio_set_mode(mpu_scl, GPIO_MODE_OUTPUT_AF_OPEN_DRAIN, GPIO_MODE_OUTPUT_CLOCK_SPEED_50);
     gpio_set_mode(mpu_sda, GPIO_MODE_OUTPUT_AF_OPEN_DRAIN, GPIO_MODE_OUTPUT_CLOCK_SPEED_50);
+    gpio_set_mode(ir_led, GPIO_MODE_OUTPUT_AF_PUSH_PULL, GPIO_MODE_OUTPUT_CLOCK_SPEED_2); //May need to not use AF (AF if I use TIM2 to trigger, otherwise software controlled is just regular)
 
     //unmask EXTI register
     EXTI->EXTI_IMR |= BIT(PINNUM(ir_receiver));
@@ -42,14 +45,26 @@ int main(void) {
     EXTI->EXTI_RTSR |= BIT(PINNUM(ir_receiver));
     EXTI->EXTI_FTSR |= BIT(PINNUM(ir_receiver));
 
-    //enable 10-15 interrupts and clear pending interrupts
+    //enable 10-15 and RTC interrupts and clear pending interrupts
     NVIC->ISER[1] |= (1UL << (40 - 32));
     NVIC->ICPR[1] |= (1UL << (40 - 32));
+    NVIC->ISER[0] |= (1UL << (3));
+    NVIC->ICPR[0] |= (1UL << (3));
 
     // Configure Timer
     TIM2->TIM2_PSC = 71;
     TIM2->TIM2_ARR = 0xFFFFFFFF; // Auto-reload to max
     TIM2->TIM2_CR1 |= 1UL; // Start timer
+
+    //Initialize RTC, manually set alarm to be 10:30 PM
+    rtc_init();
+    RTC->RTC_CRL |= (1UL << 4);  // Enter Configuration Mode
+    RTC->RTC_ALRH = (81000 >> 16); // Set alarm high bits (22:30)
+    RTC->RTC_ALRL = (81000 & 0xFFFF); // Set alarm low bits
+    RTC->RTC_CRL &= ~(1UL << 4); // Exit Configuration Mode
+    RTC->RTC_CRH |= (1UL << 1);  // Enable RTC alarm interrupt
+
+    while(1){}
 
     return 0;
 }
@@ -72,6 +87,17 @@ void EXTI15_10_IRQHandler(void) {
         }
         
     }
+}
+
+//Interrupt Handler for IR Transmitter once RTC time matches time given from esp8266
+void USART1_IRQHandler(void) {
+    //TODO
+}
+
+void RTC_IRQHandler(void) {
+    //TODO use IR data from reciever to transmit from transmitter
+    //then, reset the RTC to trigger on the next day at the same time by resetting the RTC to 0.
+    //Later, once connected to the esp8266, set up an esp interrupt to trigger a RTC reset to 0 at midnight so the interrupt will trigger daily at the set time
 }
 
 void Default_Handler(void) {
