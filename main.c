@@ -6,6 +6,10 @@
 static volatile uint32_t edges_duration[MAX_EDGES];
 static volatile uint8_t edge_index = 0;
 static volatile uint32_t start_time = 0;
+static volatile uint8_t heater_on = 0;
+static volatile uint8_t heater_supposed_to_be_on = 0; //used later once gyro is enabled to print tip over
+static volatile uint32_t on_time = 3600; //used later for option thru app to adjust time heater spends on
+static volatile uint8_t test = 0;
 
 //Pins
 uint16_t ir_receiver = PIN('B', 12);
@@ -16,6 +20,12 @@ uint16_t mpu_sda = PIN('B', 7);
 uint16_t ir_led = PIN('B', 13);
 //in the future, esp8266 will be used to communicate with wifi to change the time the on/off function should run
 
+//function prototypes
+void set_alarm(uint32_t seconds);
+void reset_rtc(void);
+void heater_power(void);
+void delay(uint32_t us);
+
 int main(void) {
 
     // enable clocks
@@ -24,6 +34,7 @@ int main(void) {
     RCC->RCC_APB2ENR |= (1UL << 14); //enable USART1 clock
     RCC->RCC_APB1ENR |= (1UL << 21); //enable I2C1 clock
     RCC->RCC_APB1ENR |= 1UL; // enable timer clock
+    RCC->RCC_APB1ENR |= (1UL << 1); // enable timer clock for PWM
 
     //set I2C & IR Receiver Pins to high
     GPIO(PINBANK(mpu_scl))->GPIOx_ODR |= BIT(PINNUM(mpu_scl));
@@ -36,7 +47,7 @@ int main(void) {
     gpio_set_mode(esp_rx, GPIO_MODE_OUTPUT_AF_PUSH_PULL, GPIO_MODE_OUTPUT_CLOCK_SPEED_50);
     gpio_set_mode(mpu_scl, GPIO_MODE_OUTPUT_AF_OPEN_DRAIN, GPIO_MODE_OUTPUT_CLOCK_SPEED_50);
     gpio_set_mode(mpu_sda, GPIO_MODE_OUTPUT_AF_OPEN_DRAIN, GPIO_MODE_OUTPUT_CLOCK_SPEED_50);
-    gpio_set_mode(ir_led, GPIO_MODE_OUTPUT_AF_PUSH_PULL, GPIO_MODE_OUTPUT_CLOCK_SPEED_2); //May need to not use AF (AF if I use TIM2 to trigger, otherwise software controlled is just regular)
+    gpio_set_mode(ir_led, GPIO_MODE_OUTPUT_AF_PUSH_PULL, GPIO_MODE_OUTPUT_CLOCK_SPEED_2);
 
     //Connect EXTI12 to PB12
     AFIO->AFIO_EXTICR[3] &= ~(15UL);  // Clear bits
@@ -60,13 +71,17 @@ int main(void) {
     TIM2->TIM2_ARR = 0xFFFFFFFF; // Auto-reload to max
     TIM2->TIM2_CR1 |= 1UL; // Start timer
 
+    // Configure TIM3 for 38 kHz PWM
+    TIM3->TIM3_PSC = 72 - 1;        // 72 MHz / (71 + 1) = 1 MHz
+    TIM3->TIM3_ARR = 26 - 1;    // 1 MHz / (25 + 1) ≈ 38.46 kHz (carrier)
+    TIM3->TIM3_CCMR1 = (6 << 4); // PWM Mode 1 (CH1)
+    TIM3->TIM3_CCER |= (1 << 2); // Enable CH1N output (PB13)
+    TIM3->TIM3_CCR1 = 13;        // 50% duty cycle (13/26)
+    TIM3->TIM3_CR1 |= (1 << 0);  // Enable TIM3
+
     //Initialize RTC, manually set alarm to happen immediately
     rtc_init();
-    RTC->RTC_CRL |= (1UL << 4);  // Enter Configuration Mode
-    RTC->RTC_ALRH = 0x0000; // Set alarm high bits
-    RTC->RTC_ALRL = 0x0001; // Set alarm low bits (1 minute)
-    RTC->RTC_CRL &= ~(1UL << 4); // Exit Configuration Mode
-    RTC->RTC_CRH |= (1UL << 1);  // Enable RTC alarm interrupt
+    set_alarm(110UL);
 
     while(1){}
 
@@ -102,6 +117,65 @@ void RTC_IRQHandler(void) {
     //TODO use IR data from reciever to transmit from transmitter
     //then, reset the RTC to trigger on the next day at the same time by resetting the RTC to 0.
     //Later, once connected to the esp8266, set up an esp interrupt to trigger a RTC reset to 0 at midnight so the interrupt will trigger daily at the set time
+    if (RTC->RTC_CRL & (1UL << 1)) {
+        RTC->RTC_CRL &= ~(1UL << 1);   // Clear ALRF
+
+        //reset RTC
+        reset_rtc();
+        if (heater_on) {
+            //heater is turning off, prepare to trigger it on in 24hr from original start
+            set_alarm(86400 - on_time);
+        } else {
+            //heater is turning on, prepare to turn it off after on_time seconds
+            set_alarm(on_time);
+        }
+
+        //turn heater on/off
+        heater_power();
+        
+    }
+}
+
+//helper function to turn heater on/off
+void heater_power(void) {
+    heater_on = !heater_on;
+
+    //Enable PWM
+    TIM3->TIM3_CCER |= (1UL << 2);
+
+    for (uint8_t i = 0; i < edge_index; i++) {
+        gpio_write(ir_led, 0);
+        delay(edges_duration[i]);
+        gpio_write(ir_led, 1);
+        delay(560UL);
+    }
+
+    // Disable PWM
+    TIM3->TIM3_CCER &= ~(1UL << 2);
+
+}
+
+//helper function to set a delay
+void delay(uint32_t us) {
+    uint32_t delay_start = TIM2->TIM2_CNT;
+    while((TIM2->TIM2_CNT - delay_start) < us);
+}
+
+//helper function to set the RTC alarm
+void set_alarm(uint32_t seconds) {
+    test++;
+    RTC->RTC_CRL |= (1UL << 4);  // Enter Configuration Mode
+    RTC->RTC_ALRH = (seconds >> 16); // Set alarm high bits
+    RTC->RTC_ALRL = (seconds & 0xFFFF); // Set alarm low bits
+    RTC->RTC_CRL &= ~(1UL << 4); // Exit Configuration Mode
+}
+
+//helper function to reset the RTC
+void reset_rtc(void) {
+    RTC->RTC_CRL |= (1UL << 4);  // Enter Configuration Mode
+    RTC->RTC_CNTH = 0UL; // Reset high bits
+    RTC->RTC_CNTL = 0UL; // Reset low bits
+    RTC->RTC_CRL &= ~(1UL << 4); // Exit Configuration Mode
 }
 
 void Default_Handler(void) {
@@ -124,5 +198,6 @@ extern void _estack(void);
 __attribute__((section(".vectors"))) void (*const tab[16 + 60])(void) = {
     _estack, _reset,
     [2 ... 16 + 59] = Default_Handler,
+    [16 + 3] = RTC_IRQHandler,
     [16 + 40] = EXTI15_10_IRQHandler
 };

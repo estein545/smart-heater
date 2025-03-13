@@ -32,6 +32,10 @@ static inline void gpio_set_mode(uint16_t pin, uint8_t cnf, uint8_t mode) {
     }
 }
 
+static inline void gpio_write(uint16_t pin, uint8_t val) {
+    GPIO(PINBANK(pin))->GPIOx_BSRR = val ? BIT(PINNUM(pin)) : (BIT(PINNUM(pin)) << 16);
+}
+
 struct rcc {
     volatile uint32_t RCC_CR, RCC_CFGR, RCC_CIR, RCC_APB2RSTR, RCC_APB1RSTR,
     RCC_AHBENR, RCC_APB2ENR, RCC_APB1ENR, RCC_BDCR, RCC_CSR, RCC_AHBSTR, RCC_CFGR2;
@@ -68,6 +72,15 @@ struct tim2 {
 };
 
 #define TIM2 ((struct tim2 *) 0x40000000)
+
+struct tim3 {
+    volatile uint32_t TIM3_CR1, TIM3_CR2, TIM3_SMCR, TIM3_DIER, TIM3_SR,
+     TIM3_EGR, TIM3_CCMR1, TIM3_CCMR2, TIM3_CCER, TIM3_CNT, TIM3_PSC, 
+     TIM3_ARR, TIM3_RCR, TIM3_CCR1, TIM3_CCR2, TIM3_CCR3, TIM3_CCR4, 
+     TIM3_BDTR, TIM3_DCR, TIM3_DMAR;
+};
+
+#define TIM3 ((struct tim3 *) 0x40000400)
 
 struct rtc {
     volatile uint32_t RTC_CRH, RTC_CRL, RTC_PRLH, RTC_PRLL, RTC_DIVH,
@@ -114,4 +127,7 @@ void rtc_init(void) {
     RTC->RTC_CRL &= ~(1UL << 4);      // Exit config mode
     // Wait for synchronization again
     while (!(RTC->RTC_CRL & (1UL << 5)));
+
+    //Enable RTC Alarm Interrupt
+    RTC->RTC_CRH |= (1UL << 1);
 }

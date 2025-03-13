@@ -4,7 +4,9 @@
   "description": "A source xPack with <your-description-here>",
   "main": "",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "openocd": "openocd -f interface/stlink-v2.cfg -f target/stm32f1x.cfg",
+    "gdb": "arm-none-eabi-gdb firmware.elf"
   },
   "repository": {
     "type": "git",
