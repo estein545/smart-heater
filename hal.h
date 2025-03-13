@@ -74,16 +74,44 @@ struct rtc {
     RTC_DIVL, RTC_CNTH, RTC_CNTL, RTC_ALRH, RTC_ALRL;
 };
 
-#define RTC ((struct rtc *) 0x40002800)  // RTC base address (assuming STM32F103)
+#define RTC ((struct rtc *) 0x40002800)
 
+struct pwr {
+    volatile uint32_t PWR_CR, PWR_CSR;
+};
+
+#define PWR ((struct pwr *)0x40007000)
+
+struct afio {
+    volatile uint32_t AFIO_EVCR, AFIO_MAPR, AFIO_EXTICR[4], 
+    AFIO_MAPR2;       
+};
+
+#define AFIO ((struct afio *)0x40010000)
 
 void rtc_init(void) {
-    RCC->RCC_APB1ENR |= (1UL << 27); // Enable RTC clock
-    RCC->RCC_BDCR |= (1UL << 15); // Enable RTC
-    RCC->RCC_BDCR |= (1UL << 8); // Select LSE as RTC clock
-    while (!(RCC->RCC_BDCR & (1UL << 9))); // Wait for LSE ready
+    // Enable PWR and Backup Interface clocks
+    RCC->RCC_APB1ENR |= (1UL << 28);  // PWR
+    RCC->RCC_APB1ENR |= (1UL << 27);  // Backup
 
-    RTC->RTC_CRL |= (1UL << 4); // Enter Configuration Mode
-    RTC->RTC_PRLL = 32767; // Set RTC Prescaler (1Hz = 1 second)
-    RTC->RTC_CRL &= ~(1UL << 4); // Exit Configuration Mode
+    // Unlock backup domain
+    PWR->PWR_CR |= (1UL << 8);        // DBP (Disable Backup Protection)
+    while (!(PWR->PWR_CR & (1UL << 8))); // Wait for DBP to be set
+
+    // Enable LSI
+    RCC->RCC_CSR |= (1UL << 0);      // Enable LSI
+    while (!(RCC->RCC_CSR & (1UL << 1))); // Wait for LSI ready
+
+    // Select LSI as source and enable RTC clock
+    RCC->RCC_BDCR &= ~(3UL << 8);     // Clear RTCSEL
+    RCC->RCC_BDCR |= (2UL << 8);
+    RCC->RCC_BDCR |= (1UL << 15);
+
+    // Configure RTC
+    RTC->RTC_CRL |= (1UL << 4);       // Enter config mode
+    while (!(RTC->RTC_CRL & (1UL << 5))); // Wait for RSF
+    RTC->RTC_PRLL = 40000 - 1;          // Set prescaler (LSI operates at 40 kHz)
+    RTC->RTC_CRL &= ~(1UL << 4);      // Exit config mode
+    // Wait for synchronization again
+    while (!(RTC->RTC_CRL & (1UL << 5)));
 }

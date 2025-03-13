@@ -38,6 +38,10 @@ int main(void) {
     gpio_set_mode(mpu_sda, GPIO_MODE_OUTPUT_AF_OPEN_DRAIN, GPIO_MODE_OUTPUT_CLOCK_SPEED_50);
     gpio_set_mode(ir_led, GPIO_MODE_OUTPUT_AF_PUSH_PULL, GPIO_MODE_OUTPUT_CLOCK_SPEED_2); //May need to not use AF (AF if I use TIM2 to trigger, otherwise software controlled is just regular)
 
+    //Connect EXTI12 to PB12
+    AFIO->AFIO_EXTICR[3] &= ~(15UL);  // Clear bits
+    AFIO->AFIO_EXTICR[3] |=  1UL;  // Set to Port B
+
     //unmask EXTI register
     EXTI->EXTI_IMR |= BIT(PINNUM(ir_receiver));
 
@@ -56,11 +60,11 @@ int main(void) {
     TIM2->TIM2_ARR = 0xFFFFFFFF; // Auto-reload to max
     TIM2->TIM2_CR1 |= 1UL; // Start timer
 
-    //Initialize RTC, manually set alarm to be 10:30 PM
+    //Initialize RTC, manually set alarm to happen immediately
     rtc_init();
     RTC->RTC_CRL |= (1UL << 4);  // Enter Configuration Mode
-    RTC->RTC_ALRH = (81000 >> 16); // Set alarm high bits (22:30)
-    RTC->RTC_ALRL = (81000 & 0xFFFF); // Set alarm low bits
+    RTC->RTC_ALRH = 0x0000; // Set alarm high bits
+    RTC->RTC_ALRL = 0x0001; // Set alarm low bits (1 minute)
     RTC->RTC_CRL &= ~(1UL << 4); // Exit Configuration Mode
     RTC->RTC_CRH |= (1UL << 1);  // Enable RTC alarm interrupt
 
@@ -85,7 +89,7 @@ void EXTI15_10_IRQHandler(void) {
             edges_duration[edge_index] = end_time - start_time;
             edge_index++;
         }
-        
+        //TODO: record time IN BETWEEN last start time and end time
     }
 }
 
