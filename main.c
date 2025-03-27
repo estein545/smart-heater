@@ -163,11 +163,16 @@ void delay(uint32_t us) {
 
 //helper function to set the RTC alarm
 void set_alarm(uint32_t seconds) {
-    test++;
+    // Wait until RTC is ready for update
+    while (!(RTC->RTC_CRL & (1UL << 5)));
+
     RTC->RTC_CRL |= (1UL << 4);  // Enter Configuration Mode
     RTC->RTC_ALRH = (seconds >> 16); // Set alarm high bits
     RTC->RTC_ALRL = (seconds & 0xFFFF); // Set alarm low bits
     RTC->RTC_CRL &= ~(1UL << 4); // Exit Configuration Mode
+
+    // Ensure RTC writes complete
+    while (!(RTC->RTC_CRL & (1UL << 5)));
 }
 
 //helper function to reset the RTC
